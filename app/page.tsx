@@ -1,476 +1,419 @@
-"use client";
+"use client"
 
-import React, { useState, useCallback } from "react";
-import {
-  DndContext,
-  DragOverlay,
-  useDraggable,
-  useDroppable,
-  type DragStartEvent,
-  type DragEndEvent,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import React, { useState, useRef, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { BookOpen, RotateCcw, GripVertical, Check, X } from "lucide-react";
+} from "@/components/ui/dialog"
+import { CircleHelp, RotateCcw, CheckCircle2 } from "lucide-react"
 
 /* ------------------------------------------------------------------ */
-/* Data                                                                */
+/* Data — exact replica of French original, translated to English      */
 /* ------------------------------------------------------------------ */
 
-interface MatchData {
-  faceId: string;
-  faceLabel: string;
-  faceColor: string;
-  browId: string;
-  browLabel: string;
-  browColor: string;
-  explanation: string;
-}
-
-const MATCHES: MatchData[] = [
+const FACES = [
   {
-    faceId: "round",
-    faceLabel: "Round face",
-    faceColor: "bg-indigo-400/30 border-indigo-400/50",
-    browId: "thick-angled",
-    browLabel: "Thick angled brow",
-    browColor: "bg-purple-500/40 border-purple-400/60",
+    id: "round",
+    name: "Round face",
+    image: "/images/round-face.webp",
+    correctBrow: "thick-angled",
     explanation:
-      "Correct! Round face \u2192 thick angled brow because it slims the face.",
+      "Correct! Round face → thick angled brow because it slims the face.",
   },
   {
-    faceId: "long",
-    faceLabel: "Long face",
-    faceColor: "bg-sky-400/30 border-sky-400/50",
-    browId: "horizontal-long",
-    browLabel: "Horizontal long brow",
-    browColor: "bg-fuchsia-500/40 border-fuchsia-400/60",
+    id: "long",
+    name: "Long face",
+    image: "/images/long-face.jpeg",
+    correctBrow: "horizontal-long",
     explanation:
-      "Correct! Long face \u2192 horizontal long brow because it widens the face.",
+      "Correct! Long face → horizontal long brow because it widens the face.",
   },
   {
-    faceId: "small-eyes",
-    faceLabel: "Small eyes",
-    faceColor: "bg-teal-400/30 border-teal-400/50",
-    browId: "thin-lifted",
-    browLabel: "Thin lifted brow",
-    browColor: "bg-rose-500/40 border-rose-400/60",
+    id: "small-eyes",
+    name: "Small eyes",
+    image: "/images/small-eyes.jpeg",
+    correctBrow: "thin-lifted",
     explanation:
-      "Correct! Small eyes \u2192 thin lifted brow because it opens the gaze.",
+      "Correct! Small eyes → thin lifted brow because it opens the gaze.",
   },
   {
-    faceId: "prominent-eyes",
-    faceLabel: "Prominent eyes",
-    faceColor: "bg-amber-400/30 border-amber-400/50",
-    browId: "full-extended",
-    browLabel: "Full extended brow",
-    browColor: "bg-emerald-500/40 border-emerald-400/60",
+    id: "protruding",
+    name: "Prominent eyes",
+    image: "/images/protruding-eyes.jpeg",
+    correctBrow: "full-extended",
     explanation:
-      "Correct! Prominent eyes \u2192 full extended brow because it balances the features.",
+      "Correct! Prominent eyes → full extended brow because it balances the gaze.",
   },
-];
+]
+
+const BROWS = [
+  {
+    id: "thick-angled",
+    name: "Thick angled brow",
+    image: "/images/thick-angled-brows.jpeg",
+  },
+  {
+    id: "horizontal-long",
+    name: "Horizontal long brow",
+    image: "/images/horizontal-long-brows.jpeg",
+  },
+  {
+    id: "thin-lifted",
+    name: "Thin lifted brow",
+    image: "/images/thin-lifted-brows.jpeg",
+  },
+  {
+    id: "full-extended",
+    name: "Full extended brow",
+    image: "/images/full-extended-brows.jpeg",
+  },
+]
 
 /* ------------------------------------------------------------------ */
-/* Draggable brow card                                                 */
+/* Main component — mirrors French original layout & interactions      */
 /* ------------------------------------------------------------------ */
 
-function DraggableBrow({
-  id,
-  label,
-  colorClass,
-  disabled,
-}: {
-  id: string;
-  label: string;
-  colorClass: string;
-  disabled: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id,
-    disabled,
-  });
+export default function FaceShapeGame() {
+  const [matches, setMatches] = useState<Record<string, string>>({})
+  const [feedback, setFeedback] = useState<Record<string, string>>({})
+  const [dragItem, setDragItem] = useState<string | null>(null)
+  const [score, setScore] = useState(0)
+  const [guideOpen, setGuideOpen] = useState(false)
+  const [endOpen, setEndOpen] = useState(false)
+  const dragCounters = useRef<Record<string, number>>({})
 
-  return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      className={`
-        ${colorClass} border-2 rounded-xl px-4 py-5 text-center font-semibold
-        select-none transition-all duration-200
-        ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-grab active:cursor-grabbing hover:scale-105 hover:shadow-lg hover:shadow-purple-500/20"}
-        ${isDragging ? "opacity-30" : ""}
-      `}
-    >
-      <div className="flex items-center justify-center gap-2 mb-2">
-        {!disabled && <GripVertical className="w-4 h-4 text-white/50" />}
-        <span className="text-sm font-bold tracking-wide text-white/90 uppercase">
-          Brow
-        </span>
-      </div>
-      <div className="h-10 rounded-lg bg-white/10 flex items-center justify-center mb-2">
-        <span className="text-xs text-white/60">~ shape preview ~</span>
-      </div>
-      <p className="text-white text-sm">{label}</p>
-    </div>
-  );
-}
+  const handleDragStart = (e: React.DragEvent, browId: string) => {
+    setDragItem(browId)
+    e.dataTransfer.effectAllowed = "move"
+  }
 
-/* ------------------------------------------------------------------ */
-/* Overlay card (follows pointer while dragging)                       */
-/* ------------------------------------------------------------------ */
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+  }
 
-function BrowOverlay({
-  label,
-  colorClass,
-}: {
-  label: string;
-  colorClass: string;
-}) {
-  return (
-    <div
-      className={`${colorClass} border-2 rounded-xl px-4 py-5 text-center font-semibold shadow-2xl shadow-purple-500/30 scale-105`}
-    >
-      <div className="flex items-center justify-center gap-2 mb-2">
-        <GripVertical className="w-4 h-4 text-white/50" />
-        <span className="text-sm font-bold tracking-wide text-white/90 uppercase">
-          Brow
-        </span>
-      </div>
-      <div className="h-10 rounded-lg bg-white/10 flex items-center justify-center mb-2">
-        <span className="text-xs text-white/60">~ shape preview ~</span>
-      </div>
-      <p className="text-white text-sm">{label}</p>
-    </div>
-  );
-}
+  const handleDragEnter = (e: React.DragEvent, faceId: string) => {
+    e.preventDefault()
+    dragCounters.current[faceId] = (dragCounters.current[faceId] || 0) + 1
+  }
 
-/* ------------------------------------------------------------------ */
-/* Droppable face zone                                                 */
-/* ------------------------------------------------------------------ */
+  const handleDragLeave = (_e: React.DragEvent, faceId: string) => {
+    dragCounters.current[faceId] = (dragCounters.current[faceId] || 0) - 1
+  }
 
-function DroppableFace({
-  id,
-  label,
-  colorClass,
-  matchedBrow,
-  isCorrect,
-  isWrong,
-}: {
-  id: string;
-  label: string;
-  colorClass: string;
-  matchedBrow: string | null;
-  isCorrect: boolean;
-  isWrong: boolean;
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+  const handleDrop = (e: React.DragEvent, faceId: string) => {
+    e.preventDefault()
+    dragCounters.current[faceId] = 0
+    if (!dragItem) return
 
-  return (
-    <div
-      ref={setNodeRef}
-      className={`
-        ${colorClass} border-2 rounded-xl p-4 text-center transition-all duration-300
-        ${isOver ? "ring-2 ring-purple-400 scale-[1.03] shadow-lg shadow-purple-500/20" : ""}
-        ${isCorrect ? "ring-2 ring-emerald-400 bg-emerald-500/20 border-emerald-400/60" : ""}
-        ${isWrong ? "animate-pulse ring-2 ring-red-400" : ""}
-      `}
-    >
-      <span className="text-xs font-bold tracking-wide text-white/70 uppercase">
-        Face
-      </span>
-      <div className="h-20 rounded-lg bg-white/10 flex items-center justify-center my-2">
-        <span className="text-xs text-white/50">~ face preview ~</span>
-      </div>
-      <p className="text-white font-semibold text-sm mb-3">{label}</p>
+    const face = FACES.find((f) => f.id === faceId)
+    const isCorrect = face?.correctBrow === dragItem
 
-      {/* Drop zone indicator */}
-      <div
-        className={`
-          min-h-[44px] rounded-lg border-2 border-dashed flex items-center justify-center text-xs transition-colors
-          ${isCorrect ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-300" : "border-white/20 text-white/40"}
-          ${isOver && !isCorrect ? "border-purple-400/60 bg-purple-500/10 text-purple-300" : ""}
-        `}
-      >
-        {isCorrect ? (
-          <span className="flex items-center gap-1">
-            <Check className="w-4 h-4" /> {matchedBrow}
-          </span>
-        ) : (
-          "Drop brow here"
-        )}
-      </div>
-    </div>
-  );
-}
+    setMatches((prev) => ({ ...prev, [faceId]: dragItem }))
 
-/* ------------------------------------------------------------------ */
-/* Main page                                                           */
-/* ------------------------------------------------------------------ */
+    if (isCorrect && face) {
+      setFeedback((prev) => ({ ...prev, [faceId]: face.explanation }))
+      setScore((prev) => prev + 1)
+    } else {
+      setFeedback((prev) => ({
+        ...prev,
+        [faceId]: "Try again! This combination is not optimal.",
+      }))
+    }
 
-export default function GamePage() {
-  const [matched, setMatched] = useState<Record<string, string>>({});
-  const [wrongShake, setWrongShake] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  const score = Object.keys(matched).length;
-
-  const pointerSensor = useSensor(PointerSensor, {
-    activationConstraint: { distance: 5 },
-  });
-  const touchSensor = useSensor(TouchSensor, {
-    activationConstraint: { delay: 150, tolerance: 5 },
-  });
-  const sensors = useSensors(pointerSensor, touchSensor);
-
-  /* Which brow ids are already placed */
-  const placedBrows = new Set(Object.values(matched));
-
-  const handleDragStart = useCallback((event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-    setFeedback(null);
-    setWrongShake(null);
-  }, []);
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      setActiveId(null);
-      const { active, over } = event;
-      if (!over) return;
-
-      const browId = active.id as string;
-      const faceId = over.id as string;
-
-      /* Already matched? */
-      if (matched[faceId]) return;
-
-      const match = MATCHES.find(
-        (m) => m.faceId === faceId && m.browId === browId
-      );
-
-      if (match) {
-        setMatched((prev) => ({ ...prev, [faceId]: browId }));
-        setFeedback(match.explanation);
-      } else {
-        setWrongShake(faceId);
-        setFeedback("Incorrect match. Try again!");
-        setTimeout(() => setWrongShake(null), 700);
-      }
-    },
-    [matched]
-  );
+    setDragItem(null)
+  }
 
   const handleReset = () => {
-    setMatched({});
-    setFeedback(null);
-    setWrongShake(null);
-  };
+    setMatches({})
+    setFeedback({})
+    setScore(0)
+    setEndOpen(false)
+    dragCounters.current = {}
+  }
 
-  const activeMatch = MATCHES.find((m) => m.browId === activeId);
+  const allDone = Object.keys(matches).length === FACES.length
+  const correctCount = Object.entries(matches).filter(([faceId, browId]) => {
+    const face = FACES.find((f) => f.id === faceId)
+    return face?.correctBrow === browId
+  }).length
+
+  useEffect(() => {
+    if (allDone) setEndOpen(true)
+  }, [allDone])
 
   return (
-    <main className="min-h-screen py-8 px-4">
-      <div className="max-w-5xl mx-auto space-y-8">
-        {/* ---- Header ---- */}
-        <div className="text-center space-y-2">
-          <h1 className="text-3xl md:text-4xl font-extrabold bg-gradient-to-r from-purple-400 via-fuchsia-400 to-indigo-400 bg-clip-text text-transparent">
-            Morphological Analysis &mdash; Mini Game
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-purple-100 p-1 sm:p-2">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-2 sm:mb-4">
+          <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-purple-900 mb-1 px-2">
+            Morphological Analysis - Mini Game
           </h1>
-          <p className="text-muted-foreground max-w-lg mx-auto">
+          <p className="text-xs sm:text-sm text-purple-700 mb-2 px-2">
             Drag and drop the eyebrow shapes onto the matching face types
           </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 mb-2 px-2">
+            <Badge
+              variant="secondary"
+              className="bg-purple-200 text-purple-800 text-xs sm:text-sm px-3 py-1"
+            >
+              Score: {correctCount}/{FACES.length}
+            </Badge>
+
+            <Dialog open={guideOpen} onOpenChange={setGuideOpen}>
+              <DialogTrigger asChild>
+                <Button
+                  size="sm"
+                  className="bg-gradient-to-r from-purple-600 to-purple-800 hover:from-purple-700 hover:to-purple-900 text-white font-bold shadow-lg animate-pulse border-2 border-purple-300 px-3 py-2 sm:px-6 sm:py-3 text-xs sm:text-sm min-h-[44px] touch-manipulation"
+                >
+                  <CircleHelp className="w-4 h-4 mr-1 sm:mr-2" />
+                  GUIDE
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-[95vw] sm:max-w-2xl mx-2 sm:mx-4 max-h-[85vh] sm:max-h-[90vh] flex flex-col fixed top-64 left-1/2 transform -translate-x-1/2">
+                <DialogHeader className="flex-shrink-0">
+                  <DialogTitle className="text-purple-900 text-base sm:text-lg">
+                    Eyebrow Shape Guide
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="flex-1 overflow-y-auto space-y-3 sm:space-y-4 pr-1 sm:pr-2">
+                  <p className="text-xs sm:text-sm text-gray-700">
+                    Eyebrow design should be adapted to facial morphology to
+                    balance features:
+                  </p>
+                  <div className="grid gap-2 sm:gap-3">
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-2 sm:p-3 bg-purple-50 rounded-lg gap-1 sm:gap-0">
+                      <span className="font-medium text-purple-900 text-sm">
+                        Round face
+                      </span>
+                      <span className="text-xs sm:text-sm text-purple-700">
+                        → Thick angled brows
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-2 sm:p-3 bg-purple-50 rounded-lg gap-1 sm:gap-0">
+                      <span className="font-medium text-purple-900 text-sm">
+                        Long face
+                      </span>
+                      <span className="text-xs sm:text-sm text-purple-700">
+                        → Long, low-arched brows
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-2 sm:p-3 bg-purple-50 rounded-lg gap-1 sm:gap-0">
+                      <span className="font-medium text-purple-900 text-sm">
+                        Prominent eyes
+                      </span>
+                      <span className="text-xs sm:text-sm text-purple-700">
+                        → Full extended brows
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-2 sm:p-3 bg-purple-50 rounded-lg gap-1 sm:gap-0">
+                      <span className="font-medium text-purple-900 text-sm">
+                        Small eyes
+                      </span>
+                      <span className="text-xs sm:text-sm text-purple-700">
+                        → Thin lifted brows
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-2 sm:p-3 bg-purple-50 rounded-lg gap-1 sm:gap-0">
+                      <span className="font-medium text-purple-900 text-sm">
+                        Wide-set eyes / short nose
+                      </span>
+                      <span className="text-xs sm:text-sm text-purple-700">
+                        → Brow heads closer together
+                      </span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-2 sm:p-3 bg-purple-50 rounded-lg gap-1 sm:gap-0">
+                      <span className="font-medium text-purple-900 text-sm">
+                        Long nose
+                      </span>
+                      <span className="text-xs sm:text-sm text-purple-700">
+                        → Brow heads further apart
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600 italic">
+                    Use this guide to make the right matches in the game!
+                  </p>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Button
+              onClick={handleReset}
+              variant="outline"
+              size="sm"
+              className="border-purple-300 text-purple-700 hover:bg-purple-50 bg-transparent text-xs sm:text-sm min-h-[44px] touch-manipulation px-3 py-2"
+            >
+              <RotateCcw className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+              Reset
+            </Button>
+          </div>
         </div>
 
-        {/* ---- Toolbar ---- */}
-        <div className="flex items-center justify-center gap-4 flex-wrap">
-          <Badge
-            variant="secondary"
-            className="text-base px-4 py-1.5 bg-secondary/80"
-          >
-            Score: {score}/4
-          </Badge>
-
-          {/* Guide dialog */}
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1.5">
-                <BookOpen className="w-4 h-4" />
-                GUIDE
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-[hsl(232,30%,14%)] border-border">
-              <DialogHeader>
-                <DialogTitle className="text-purple-300">
-                  Matching Guide
-                </DialogTitle>
-                <DialogDescription className="text-muted-foreground">
-                  Use these rules to match each face type with the correct
-                  eyebrow shape.
-                </DialogDescription>
-              </DialogHeader>
-              <ul className="space-y-3 mt-2 text-sm text-foreground/90">
-                {MATCHES.map((m) => (
-                  <li key={m.faceId} className="flex items-start gap-2">
-                    <span className="text-purple-400 font-bold">&#8226;</span>
-                    <span>
-                      <strong className="text-white">{m.faceLabel}</strong>{" "}
-                      &rarr;{" "}
-                      <strong className="text-purple-300">{m.browLabel}</strong>{" "}
-                      &mdash;{" "}
-                      {m.explanation
-                        .replace("Correct! ", "")
-                        .replace(
-                          /.*because /,
-                          ""
-                        )
-                        .replace(/^\w/, (c) => c.toUpperCase())}
-                      .
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </DialogContent>
-          </Dialog>
-
-          <Button
-            variant="secondary"
-            size="sm"
-            className="gap-1.5"
-            onClick={handleReset}
-          >
-            <RotateCcw className="w-4 h-4" />
-            Reset
-          </Button>
-        </div>
-
-        {/* ---- Feedback banner ---- */}
-        {feedback && (
-          <Card
-            className={`mx-auto max-w-xl border ${
-              feedback.startsWith("Correct")
-                ? "border-emerald-500/50 bg-emerald-500/10"
-                : "border-red-500/50 bg-red-500/10"
-            }`}
-          >
-            <CardContent className="py-3 px-4 text-center text-sm flex items-center justify-center gap-2">
-              {feedback.startsWith("Correct") ? (
-                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-              ) : (
-                <X className="w-4 h-4 text-red-400 shrink-0" />
-              )}
-              <span
-                className={
-                  feedback.startsWith("Correct")
-                    ? "text-emerald-300"
-                    : "text-red-300"
-                }
-              >
-                {feedback}
-              </span>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ---- Game area ---- */}
-        <DndContext
-          sensors={sensors}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <div className="grid gap-8 lg:grid-cols-2">
-            {/* Face drop zones */}
-            <section>
-              <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4 text-center">
-                Face Types
-              </h2>
-              <div className="grid grid-cols-2 gap-4">
-                {MATCHES.map((m) => (
-                  <DroppableFace
-                    key={m.faceId}
-                    id={m.faceId}
-                    label={m.faceLabel}
-                    colorClass={m.faceColor}
-                    matchedBrow={
-                      matched[m.faceId]
-                        ? MATCHES.find((x) => x.browId === matched[m.faceId])
-                            ?.browLabel ?? null
-                        : null
-                    }
-                    isCorrect={!!matched[m.faceId]}
-                    isWrong={wrongShake === m.faceId}
-                  />
-                ))}
-              </div>
-            </section>
-
-            {/* Brow draggables */}
-            <section>
-              <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-4 text-center">
-                Eyebrow Shapes
-              </h2>
-              <div className="grid grid-cols-2 gap-4">
-                {MATCHES.map((m) => (
-                  <DraggableBrow
-                    key={m.browId}
-                    id={m.browId}
-                    label={m.browLabel}
-                    colorClass={m.browColor}
-                    disabled={placedBrows.has(m.browId)}
-                  />
-                ))}
-              </div>
-            </section>
+        {/* Game grid — 3 columns on lg: faces (2 cols) + brows (1 col) */}
+        <div className="flex flex-col lg:grid lg:grid-cols-3 gap-2 sm:gap-4">
+          {/* Face cards */}
+          <div className="lg:col-span-2 space-y-2">
+            <h2 className="text-sm sm:text-base lg:text-lg font-semibold text-purple-900 text-center px-2">
+              Face Types
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 px-1 sm:px-0">
+              {FACES.map((face) => {
+                const isCorrect =
+                  matches[face.id] &&
+                  FACES.find((f) => f.id === face.id)?.correctBrow ===
+                    matches[face.id]
+                return (
+                  <Card
+                    key={face.id}
+                    className={`transition-all duration-200 touch-manipulation ${
+                      dragCounters.current[face.id] > 0
+                        ? "border-purple-400 bg-purple-50 scale-105"
+                        : "border-purple-200"
+                    } ${
+                      isCorrect ? "border-green-400 bg-green-50" : ""
+                    }`}
+                    onDragOver={handleDragOver}
+                    onDragEnter={(e) => handleDragEnter(e, face.id)}
+                    onDragLeave={(e) => handleDragLeave(e, face.id)}
+                    onDrop={(e) => handleDrop(e, face.id)}
+                  >
+                    <CardHeader className="pb-1 sm:pb-2">
+                      <CardTitle className="text-xs sm:text-sm text-purple-800 flex items-center gap-2">
+                        {face.name}
+                        {isCorrect && (
+                          <CheckCircle2 className="w-3 h-3 sm:w-4 sm:h-4 text-green-600" />
+                        )}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-2 sm:p-3">
+                      <div className="space-y-2">
+                        <img
+                          src={face.image}
+                          alt={face.name}
+                          className="w-28 h-28 sm:w-32 sm:h-32 lg:w-44 lg:h-44 object-contain rounded-lg bg-white p-2 border border-purple-100 mx-auto"
+                        />
+                        {matches[face.id] && (
+                          <div className="text-center">
+                            <img
+                              src={
+                                BROWS.find((b) => b.id === matches[face.id])
+                                  ?.image
+                              }
+                              alt="Matched brow"
+                              className="w-20 h-10 sm:w-24 sm:h-12 lg:w-36 lg:h-18 object-contain bg-white rounded p-1 border border-purple-100 mx-auto"
+                            />
+                          </div>
+                        )}
+                        {feedback[face.id] && (
+                          <p
+                            className={`text-xs ${
+                              isCorrect
+                                ? "text-green-700 bg-green-100"
+                                : "text-orange-700 bg-orange-100"
+                            } p-2 rounded leading-relaxed`}
+                          >
+                            {feedback[face.id]}
+                          </p>
+                        )}
+                        {!matches[face.id] && (
+                          <div className="border-2 border-dashed border-purple-300 rounded-lg p-3 sm:p-2 text-center text-purple-500 text-xs min-h-[44px] flex items-center justify-center">
+                            Drop zone
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
           </div>
 
-          {/* Drag overlay */}
-          <DragOverlay dropAnimation={null}>
-            {activeMatch ? (
-              <BrowOverlay
-                label={activeMatch.browLabel}
-                colorClass={activeMatch.browColor}
-              />
-            ) : null}
-          </DragOverlay>
-        </DndContext>
+          {/* Brow cards */}
+          <div className="space-y-2">
+            <h2 className="text-sm sm:text-base lg:text-lg font-semibold text-purple-900 text-center px-2">
+              Eyebrow Shapes
+            </h2>
+            <div className="flex flex-row lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 px-1 sm:px-0">
+              {BROWS.map((brow) => {
+                const isUsed = Object.values(matches).includes(brow.id)
+                return (
+                  <Card
+                    key={brow.id}
+                    className={`cursor-move transition-all duration-200 flex-shrink-0 lg:flex-shrink min-w-[140px] sm:min-w-[120px] lg:min-w-0 touch-manipulation ${
+                      isUsed
+                        ? "opacity-50 bg-gray-100"
+                        : "hover:shadow-lg hover:scale-105 border-purple-200"
+                    } ${dragItem === brow.id ? "opacity-50 scale-95" : ""}`}
+                    draggable={!isUsed}
+                    onDragStart={(e) => handleDragStart(e, brow.id)}
+                  >
+                    <CardContent className="p-2 sm:p-3">
+                      <div className="space-y-2">
+                        <img
+                          src={brow.image}
+                          alt={brow.name}
+                          className="w-full h-14 sm:h-16 lg:h-24 object-contain bg-white rounded p-1 border border-purple-100"
+                        />
+                        <div className="text-center">
+                          <h3 className="text-xs font-medium text-purple-800 leading-tight">
+                            {brow.name}
+                          </h3>
+                          {isUsed && (
+                            <p className="text-xs text-gray-500 mt-1">Used</p>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          </div>
+        </div>
 
-        {/* ---- Victory ---- */}
-        {score === 4 && (
-          <Card className="mx-auto max-w-md border-emerald-500/50 bg-emerald-500/10">
-            <CardContent className="py-6 text-center space-y-3">
-              <p className="text-2xl font-bold text-emerald-300">
-                Congratulations!
-              </p>
-              <p className="text-muted-foreground text-sm">
-                You matched all 4 face types correctly. Great morphological
-                analysis skills!
-              </p>
+        {/* End dialog */}
+        <Dialog open={endOpen} onOpenChange={setEndOpen}>
+          <DialogContent className="max-w-[95vw] sm:max-w-md mx-2 sm:mx-4">
+            <DialogHeader>
+              <DialogTitle className="text-center text-purple-900 text-lg sm:text-xl">
+                {correctCount === FACES.length
+                  ? "Perfect!"
+                  : "Exercise complete!"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="text-center space-y-4">
+              <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white p-4 sm:p-6 rounded-lg">
+                <p className="text-base sm:text-lg mb-2">
+                  You got{" "}
+                  <span className="font-bold">{correctCount}</span> correct
+                  answers out of {FACES.length}
+                </p>
+                {correctCount === FACES.length && (
+                  <p className="text-xs sm:text-sm opacity-90">
+                    Excellent work! You have mastered morphological analysis.
+                  </p>
+                )}
+              </div>
               <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
                 onClick={handleReset}
+                size="lg"
+                className="bg-purple-600 hover:bg-purple-700 text-white min-h-[44px] touch-manipulation px-6 py-3"
               >
-                <RotateCcw className="w-4 h-4" />
-                Play Again
+                <RotateCcw className="w-4 h-4 mr-2" />
+                Reset
               </Button>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
-    </main>
-  );
+    </div>
+  )
 }
